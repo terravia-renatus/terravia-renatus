@@ -9,7 +9,7 @@ Sync Impact Report:
     - III. Lazy Evaluation Over Polling Loops
     - IV. Hybrid Data Access & Write-Behind Micro-Batching
     - V. Strict Rule & Fog-of-War Parity
-    - VI. Test-First & TravianZ Equivalence (TDD Mandatory)
+    - VI. Test-First & Canonical Mathematical Parity (TDD Mandatory)
   - Architectural & Technology Boundaries
   - Quality Gates & Testing Standards
   - Governance
@@ -39,10 +39,10 @@ Persistence MUST adhere to a strict workload separation:
 ### V. Strict Rule & Fog-of-War Parity
 All autonomous agents (Utility AI `BotPlayerActor`s) and delegated sessions (Sitters) MUST interact with the game engine exclusively through the standardized `IGameCommandGateway`. Autonomous bots MUST possess zero information beyond their player perception snapshot (visible map tiles, owned villages, allied reports, own battle/scout reports). Sitter actions MUST be validated against granular permission bitmasks prior to command dispatch.
 
-### VI. Test-First & TravianZ Equivalence (TDD Mandatory)
+### VI. Test-First & Canonical Mathematical Parity (TDD Mandatory)
 Test-Driven Development (TDD) is non-negotiable across all domain logic. Before implementing any feature:
 1. Automated unit tests asserting expected behaviors MUST be authored.
-2. Mathematical parity against legacy TravianZ v11 baseline formulas (combat loss ratios, wall multipliers, loyalty attrition, catapult target distributions) MUST be proven through deterministic and property-based test suites.
+2. Mathematical parity against the canonical Terravia Renatus domain catalogs and golden test vectors (combat loss ratios, wall multipliers, loyalty attrition, catapult target distributions) MUST be proven through deterministic and property-based test suites.
 3. Concurrency and timer sequencing MUST be verified using `Akka.TestKit` virtual-time schedulers before feature acceptance.
 
 ## Architectural & Technology Boundaries
@@ -65,7 +65,7 @@ Test-Driven Development (TDD) is non-negotiable across all domain logic. Before 
 
 ### Automated Testing Requirements
 - Every domain pull request MUST include automated unit tests implementing the Red-Green-Refactor cycle.
-- Combat, resource accrual, and building cost logic MUST include equivalence test coverage validating results against TravianZ v11 reference data.
+- Combat, resource accrual, and building cost logic MUST include canonical golden-vector test coverage validating results against the authoritative Terravia Renatus catalog specifications.
 - State machines and asynchronous actor workflows MUST be accompanied by `Akka.TestKit` automated test suites verifying race-condition-free execution under concurrent message delivery.
 
 ### Recommended Performance Benchmarks
