@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Terravia.Domain\Terravia.Domain.csproj" />
+    <ProjectReference Include="..\Terravia.Actors\Terravia.Actors.csproj" />
+    <ProjectReference Include="..\Terravia.BotAI\Terravia.BotAI.csproj" />
+    <ProjectReference Include="..\Terravia.Infrastructure\Terravia.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>
