@@ -1,18 +1,9 @@
 <!--
 Sync Impact Report:
-- Version change: Uninitialized Template -> 1.0.0 (Initial Ratification)
-- Modified principles: None (initial creation from architecture blueprint)
+- Version change: 1.0.0 -> 1.1.0 (Minor Amendment: Added Naming & Structural Conventions)
+- Modified principles: None
 - Added sections:
-  - Core Principles:
-    - I. Actor Boundaries as DDD Aggregate Roots
-    - II. Zero-Allocation Hot Paths & Pure Domain Services
-    - III. Lazy Evaluation Over Polling Loops
-    - IV. Hybrid Data Access & Write-Behind Micro-Batching
-    - V. Strict Rule & Fog-of-War Parity
-    - VI. Test-First & Canonical Mathematical Parity (TDD Mandatory)
-  - Architectural & Technology Boundaries
-  - Quality Gates & Testing Standards
-  - Governance
+  - Naming & Structural Conventions (under Architectural & Technology Boundaries)
 - Removed sections: None
 - Follow-up TODOs: None
 -->
@@ -52,6 +43,7 @@ Test-Driven Development (TDD) is non-negotiable across all domain logic. Before 
 - Adding multi-tenant partitioning columns (e.g., `WorldId`) to core tables or domain contracts is forbidden.
 
 ### Solution Layering & Dependency Flow
+- **One Type Per File (C#)**: Every public C# `class`, `record`, `struct`, `interface`, or `enum` MUST reside in its own dedicated `.cs` file whose filename matches the type name `1:1` (without splitting classes across `partial` `<TypeName>.<Feature>.cs` files).
 - **`server/src/Terravia.Domain`**: Pure C# domain model, aggregate boundaries, value objects, pure math services, and command definitions. It MUST have ZERO dependencies on Akka.NET, EF Core, ASP.NET Core, SignalR, or third-party I/O frameworks.
 - **`server/src/Terravia.Actors`**: Akka.NET actor hierarchy, scheduler actors, micro-batch flush coordination, and message routing. Depends on `Terravia.Domain`.
 - **`server/src/Terravia.BotAI`**: Utility AI decision engine, consideration curves, and personality archetypes. Interacts with the game exclusively via `IGameCommandGateway`.
@@ -60,6 +52,31 @@ Test-Driven Development (TDD) is non-negotiable across all domain logic. Before 
 - **`client/packages/game-contracts`**: Single source of truth for TypeScript DTOs, SignalR protocol contracts, and 60fps client-side resource interpolation algorithms shared between `game-ui` and `admin-ui`.
 - **`client/apps/game-ui`**: Full-canvas game client built on Phaser v4 within a SvelteKit SPA container. DOM elements MUST only be utilized for native input fields and clipboard operations.
 - **`client/apps/admin-ui`**: High-density operations dashboard built with SvelteKit, Tailwind CSS v4, `shadcn-svelte`, and Apache ECharts.
+
+### Naming & Structural Conventions
+To maintain architectural clarity across all domain, actor, infrastructure, and contract layers, the codebase MUST enforce the following naming and organization standards:
+
+1. **Vertical Feature-Folder Organization & 1-File-Per-Type Rule**:
+   - Every project (`Terravia.Domain`, `Terravia.Actors`, `Terravia.Infrastructure`, `Terravia.WebAPI`) MUST be organized vertically by bounded domain feature (`Catalog/`, `Villages/`, `Players/`, `Alliances/`, `Movements/`, `Markets/`, `Heroes/`) rather than horizontal technical folders (`Models/`, `Rules/`, `Data/`, `Commands/`, `Services/`, `Entities/`, `Repositories/`, `Endpoints/`). Namespaces MUST match the folder hierarchy (`Terravia.Domain.Catalog`, `Terravia.Domain.Villages`, `Terravia.Infrastructure.Villages`).
+   - Every file MUST contain a single primary type whose file name matches the type name (`VillageActor.cs` -> `sealed class VillageActor`, `VillageState.cs` -> `sealed class VillageState`). Splitting Aggregate Roots or Actors across multiple `partial` files (`VillageActor.Construction.cs`, `VillageActor.Combat.cs`) is prohibited; instead, keep actors as cohesive message-routing and timer coordinators that delegate domain behavior to dedicated `*Manager` classes.
+2. **Domain Services (`*Manager`, `*Calculator`, `*Catalog`) vs. Application Endpoints (`*AppService`, `*Endpoints`)**:
+   - Stateful or multi-aggregate domain orchestration services in `Terravia.Domain` MUST be suffixed with **`Manager`** (e.g., `VillageConstructionManager`, `OasisAnnexationManager`, `TrapperManager`, `HospitalHealingManager`, `AllianceBonusManager`) and injected as concrete classes (do NOT create redundant `I*Manager` interfaces unless multiple runtime implementations exist).
+   - Pure mathematical evaluators and static lookup tables MUST be suffixed with **`Calculator`** or **`Catalog`** (e.g., `ConstructionCalculator`, `BuildingRuleCatalog`).
+   - Administrative and HTTP orchestration services in `Terravia.WebAPI` MUST be suffixed with **`AppService`** or **`Endpoints`** — never conflating domain services with application services.
+3. **Persistence Models, Technology-Prefixed Repositories & `*Consts`**:
+   - Persistence and domain models MUST use clean, singular domain nouns (`Village`, `VillageBuilding`, `VillageQueueItem`, `VillageTroopStack`) and MUST NOT append the redundant `Entity` suffix.
+   - Infrastructure repository implementations MUST be prefixed with their data-access technology and placed in the corresponding feature folder (`DapperVillageRepository`, `EfCorePlayerRepository`).
+   - Database table names, schema prefixes, and field length/range constraints MUST be centralized in `TerraviaDbProperties` and feature-scoped `*Consts` classes (`CatalogConsts`, `VillageConsts`, `PlayerConsts`, `AllianceConsts`).
+4. **Events (`*Event` vs. `*Eto`)**:
+   - All events MUST be named in the **past tense** without an `On` prefix (`On*` is strictly reserved for event handler methods).
+   - Events crossing actor, SignalR, or persistence process boundaries MUST be immutable records suffixed with **`Eto` (Event Transfer Object)** across both C# and TypeScript contracts (e.g., `VillageConstructionChangedEto`, `VillageStateFlushEto`).
+5. **Data Transfer Objects, Commands & Queries (`*Dto`, `*Command`, `*Query`, `*Input`)**:
+   - Outbound read projections and SignalR payloads MUST be suffixed with **`Dto`** (e.g., `VillageSlotDto`, `VillageSnapshotDto`).
+   - State-mutating messages routed via `IGameCommandGateway` or actor timers MUST be suffixed with **`Command`** (`ConstructOrUpgradeBuildingCommand`, `ProcessDueVillageTimersCommand`).
+   - Read-only actor or repository requests MUST be suffixed with **`Query`** or **`Input`** (`GetVillageStateQuery`, `GetMapViewportInput`).
+6. **Hierarchical Error Codes, Permissions & Settings**:
+   - Domain validation and rule failures MUST use structured `<Namespace>:<Feature>:<Code>` constants defined in `TerraviaDomainErrorCodes` (e.g., `Terravia:Villages:InsufficientResources`, `Terravia:Sitters:PermissionDenied`) to support deterministic testing and client-side localization.
+   - Permissions and live-ops server settings MUST be organized in nested static hierarchy classes (`TerraviaPermissions`, `TerraviaSettings`) using dot-separated identifiers (`Terravia.Sitter.BuildAndDemolish`, `Terravia.Sitter.SpendGold`, `Terravia.Admin.ManageRound`).
 
 ## Quality Gates & Testing Standards
 
@@ -89,4 +106,4 @@ This Constitution follows Semantic Versioning (`MAJOR.MINOR.PATCH`):
 - **MINOR**: Addition of new principles, structural expansion of guidelines, or newly ratified technology boundaries.
 - **PATCH**: Non-semantic clarifications, typographical corrections, formatting adjustments, or link updates.
 
-**Version**: 1.0.0 | **Ratified**: 2026-11-06 | **Last Amended**: 2026-11-06
+**Version**: 1.1.0 | **Ratified**: 2026-11-06 | **Last Amended**: 2026-11-06
