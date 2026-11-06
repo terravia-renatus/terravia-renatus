@@ -26,12 +26,8 @@ public sealed class ConstructionCalculator : IConstructionCalculator
         double baseTime = levelStats.BaseTimeSeconds;
 
         // Canonical Main Building duration scaling:
-        // If building Main Building (gid == 15):
-        //   When current Main Building level == 0: round(baseTime / Speed * 5)
-        //   When current Main Building level > 0:  round(baseTime * (bid15[mbLevel].attri / 100) / Speed)
-        // For all buildings:
         //   When Main Building level == 0: 5x penalty (round(baseTime * 5.0 / serverSpeed))
-        //   When Main Building level >= 1: round(baseTime * (bid15[mainBuildingLevel].AttributeValue / 100.0) / serverSpeed)
+        //   When Main Building level >= 1: round(baseTime * (MainBuildingLevelStats[mainBuildingLevel].AttributeValue / 100.0) / serverSpeed)
         if (mainBuildingLevel == 0)
         {
             return (int)Math.Round((baseTime * 5.0) / serverSpeed, MidpointRounding.AwayFromZero);

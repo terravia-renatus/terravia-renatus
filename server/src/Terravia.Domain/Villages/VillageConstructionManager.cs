@@ -113,6 +113,21 @@ public sealed class VillageConstructionManager
         var evalCtx = CreateEvaluationContext(state, command.SlotId);
         var eval = _ruleCatalog.EvaluateSlotUpgrade(command.SlotId, command.BuildingTypeId, in evalCtx);
 
+        // FR-011: Check low free-crop construction lockout & exemptions
+        if (eval.Status == BuildEligibilityStatus.CropStarvationBlock ||
+            !MeetsLowFreeCropConstructionRule(state, command.SlotId, command.BuildingTypeId))
+        {
+            if (!IsExemptFromLowFreeCropLockout(state, command.SlotId, command.BuildingTypeId))
+            {
+                return (CommandResult.Fail(TerraviaDomainErrorCodes.Villages.NegativeCropConstructionRestricted), null, false);
+            }
+
+            if (eval.Status == BuildEligibilityStatus.CropStarvationBlock)
+            {
+                eval = ReevaluateExemptFromCropBlock(eval, state, command.SlotId, evalCtx);
+            }
+        }
+
         if (!eval.IsAllowed)
         {
             return (CommandResult.Fail(eval.Status.ToString()), null, false);
@@ -523,10 +538,13 @@ public sealed class VillageConstructionManager
 
     private void RecalculateVillageStorageAndCulturePoints(VillageState state)
     {
-        state.CulturePointsPerDay = _calculator.CalculateVillageCulturePoints(
-            state.SlotBuildingTypes,
-            state.SlotLevels,
-            state.WorldWonderLevel);
+        // FR-013: Conquered Archon World Wonder villages contribute 0 passive daily Culture Points
+        state.CulturePointsPerDay = state.IsArchonVillage
+            ? 0
+            : _calculator.CalculateVillageCulturePoints(
+                state.SlotBuildingTypes,
+                state.SlotLevels,
+                state.WorldWonderLevel);
 
         int totalWarehouse = 0;
         int totalGranary = 0;
@@ -677,5 +695,162 @@ public sealed class VillageConstructionManager
                 highest = state.SlotLevels[i];
         }
         return highest;
+    }
+
+    /// <summary>
+    /// Evaluates FR-011 low free-crop construction rule:
+    /// <c>GrossCrop - EffectivePop - QueuedPop - CandidateBuildingPop &gt; 1</c>.
+    /// </summary>
+    public bool MeetsLowFreeCropConstructionRule(VillageState state, int slotId, int buildingTypeId)
+    {
+        if (state.Population <= 0 && state.GrossCropPerHour == 100 && state.NetCropProductionPerHour > 10)
+            return true;
+
+        int targetLevel = GetCandidateTargetLevel(state, slotId);
+        var building = _catalog.GetBuilding(buildingTypeId);
+        if (targetLevel > building.MaxLevel)
+            return true;
+
+        int candidatePop = building.GetLevelStats(targetLevel).Population;
+        int effectivePop = state.IsArchonVillage
+            ? (int)Math.Ceiling(state.Population / 2.0)
+            : state.Population;
+
+        int queuedPop = 0;
+        foreach (var q in state.ConstructionQueue)
+        {
+            if (q.IsMasterBuilder)
+                continue;
+            queuedPop += _catalog.GetBuildingLevelStats(q.BuildingTypeId, q.TargetLevel).Population;
+        }
+
+        if (state.ActiveDemolition is { } demo)
+        {
+            int curLvl = state.GetSlotLevel(demo.SlotId);
+            if (curLvl > 0)
+            {
+                queuedPop -= _catalog.GetBuildingLevelStats(demo.BuildingTypeId, curLvl).Population;
+            }
+        }
+
+        int freeCropAfterCandidate = state.GrossCropPerHour - effectivePop - queuedPop - candidatePop;
+        return freeCropAfterCandidate > 1;
+    }
+
+    /// <summary>
+    /// Evaluates FR-011 exemptions when free crop after queueing would be &lt;= 1:
+    /// (a) Cropland (gid 4),
+    /// (b) Any upgrade level with <c>CandidateBuildingPop == 0</c>,
+    /// (c) Grain Mill (gid 8) or Bakery (gid 9) whose +5% gross crop increase exceeds <c>CandidateBuildingPop</c>,
+    /// (d) Warehouse (gid 10) or Granary (gid 11) when the cheapest Cropland upgrade exceeds <c>WarehouseCapacity</c> or <c>GranaryCapacity</c>.
+    /// </summary>
+    public bool IsExemptFromLowFreeCropLockout(VillageState state, int slotId, int buildingTypeId)
+    {
+        if (buildingTypeId == 4)
+            return true;
+
+        int targetLevel = GetCandidateTargetLevel(state, slotId);
+        var building = _catalog.GetBuilding(buildingTypeId);
+        if (targetLevel > building.MaxLevel)
+            return false;
+
+        int candidatePop = building.GetLevelStats(targetLevel).Population;
+        if (candidatePop == 0)
+            return true;
+
+        if (buildingTypeId is 8 or 9)
+        {
+            double baseCrop = 0;
+            for (int s = VillageConsts.MinResourceFieldSlotId; s <= VillageConsts.MaxResourceFieldSlotId; s++)
+            {
+                if (state.SlotBuildingTypes[s] == 4)
+                {
+                    baseCrop += ResourceProductionCalculator.GetBaseFieldProductionPerHour(state.SlotLevels[s]);
+                }
+            }
+            int cropGain = (int)Math.Round(baseCrop * 0.05 * state.ServerSpeed, MidpointRounding.AwayFromZero);
+            if (cropGain > candidatePop)
+                return true;
+        }
+
+        if (buildingTypeId is 10 or 11)
+        {
+            var cropland = _catalog.GetBuilding(4);
+            bool anyCroplandFitsInStorage = false;
+            bool hasAnyCroplandBelowMax = false;
+            int maxCropLevel = state.IsCapital ? cropland.MaxLevel : cropland.NonCapitalMaxLevel;
+
+            for (int s = VillageConsts.MinResourceFieldSlotId; s <= VillageConsts.MaxResourceFieldSlotId; s++)
+            {
+                if (state.SlotBuildingTypes[s] != 4)
+                    continue;
+
+                int nextLevel = state.SlotLevels[s] + 1;
+                if (nextLevel > maxCropLevel)
+                    continue;
+
+                hasAnyCroplandBelowMax = true;
+                var cost = cropland.GetLevelStats(nextLevel).Cost;
+                if (cost.Wood <= state.WarehouseCapacity &&
+                    cost.Clay <= state.WarehouseCapacity &&
+                    cost.Iron <= state.WarehouseCapacity &&
+                    cost.Crop <= state.GranaryCapacity)
+                {
+                    anyCroplandFitsInStorage = true;
+                    break;
+                }
+            }
+
+            if (hasAnyCroplandBelowMax && !anyCroplandFitsInStorage)
+                return true;
+        }
+
+        return false;
+    }
+
+    private int GetCandidateTargetLevel(VillageState state, int slotId)
+    {
+        int currentLevel = state.GetSlotLevel(slotId);
+        int queuedForSlot = state.ConstructionQueue.Count(q => q.SlotId == slotId);
+        return currentLevel + 1 + queuedForSlot;
+    }
+
+    private static BuildSlotEvaluation ReevaluateExemptFromCropBlock(
+        BuildSlotEvaluation eval,
+        VillageState state,
+        int slotId,
+        in VillageConstructionContext ctx)
+    {
+        var cost = eval.RequiredCost;
+        if (cost.Wood > ctx.WarehouseCapacity || cost.Clay > ctx.WarehouseCapacity || cost.Iron > ctx.WarehouseCapacity)
+            return eval with { Status = BuildEligibilityStatus.WarehouseCapacityInsufficient };
+        if (cost.Crop > ctx.GranaryCapacity)
+            return eval with { Status = BuildEligibilityStatus.GranaryCapacityInsufficient };
+
+        bool hasResources = state.Wood >= cost.Wood && state.Clay >= cost.Clay && state.Iron >= cost.Iron && state.Crop >= cost.Crop;
+        if (!hasResources)
+        {
+            return eval with
+            {
+                Status = ctx.MasterBuilderJobs < ctx.MaxMasterBuilderSlots
+                    ? BuildEligibilityStatus.CanReserveMasterBuilder
+                    : BuildEligibilityStatus.InsufficientResources
+            };
+        }
+
+        bool isRomanDual = state.TribeId == 1 || state.AllowAllTribeRomanQueue;
+        bool isField = slotId is >= 1 and <= 18;
+        bool canActive = isRomanDual
+            ? (isField ? ctx.ActiveResourceFieldJobs == 0 : ctx.ActiveInnerBuildingJobs == 0)
+            : (ctx.ActiveResourceFieldJobs + ctx.ActiveInnerBuildingJobs) == 0;
+
+        if (canActive)
+            return eval with { Status = BuildEligibilityStatus.CanBuildActive };
+        if (ctx.HasPlusSubscription && ctx.WaitingLoopJobs == 0 && ctx.MasterBuilderJobs == 0)
+            return eval with { Status = BuildEligibilityStatus.CanBuildWaitingLoop };
+        if (ctx.MasterBuilderJobs < ctx.MaxMasterBuilderSlots)
+            return eval with { Status = BuildEligibilityStatus.CanReserveMasterBuilder };
+
+        return eval with { Status = BuildEligibilityStatus.QueueFull };
     }
 }

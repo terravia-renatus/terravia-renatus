@@ -3,12 +3,14 @@ using Dapper;
 using Microsoft.Data.SqlClient;
 using Terravia.Domain.Catalog;
 using Terravia.Domain.Villages;
+using Terravia.Infrastructure.Oases;
 
 namespace Terravia.Infrastructure.Villages;
 
 /// <summary>
-/// High-throughput Dapper repository using Table-Valued Parameters (TVPs) for VillageActor hydration
-/// and micro-batched / immediate write-behind flushes (Constitutional Principle IV).
+/// High-throughput Dapper repository using Table-Valued Parameters (TVPs) for VillageActor hydration,
+/// economy/storage/loyalty write-behind micro-batches, troop stack starvation updates, and Crop Finder queries
+/// (Constitutional Principle IV).
 /// </summary>
 public sealed class DapperVillageRepository
 {
@@ -67,6 +69,154 @@ public sealed class DapperVillageRepository
         }
 
         return table;
+    }
+
+    public static DataTable CreateVillageEconomyBatchTvp(IEnumerable<Village> rows)
+    {
+        var table = new DataTable();
+        table.Columns.Add("VillageId", typeof(int));
+        table.Columns.Add("OwnerPlayerId", typeof(int));
+        table.Columns.Add("OwnerTribeId", typeof(int));
+        table.Columns.Add("FieldTopologyId", typeof(int));
+        table.Columns.Add("IsCapital", typeof(bool));
+        table.Columns.Add("IsArchon", typeof(bool));
+        table.Columns.Add("Population", typeof(int));
+        table.Columns.Add("CulturePointsPerDay", typeof(int));
+        table.Columns.Add("Wood", typeof(double));
+        table.Columns.Add("Clay", typeof(double));
+        table.Columns.Add("Iron", typeof(double));
+        table.Columns.Add("Crop", typeof(double));
+        table.Columns.Add("WarehouseCap", typeof(int));
+        table.Columns.Add("GranaryCap", typeof(int));
+        table.Columns.Add("Loyalty", typeof(double));
+        table.Columns.Add("LastUpdatedMs", typeof(long));
+        table.Columns.Add("ActiveCelebrationType", typeof(int));
+        table.Columns.Add("CelebrationEndsAtMs", typeof(long));
+        table.Columns.Add("FestivalEndsAtMs", typeof(long));
+        table.Columns.Add("TotalTrapsCount", typeof(int));
+        table.Columns.Add("OccupiedTrapsCount", typeof(int));
+
+        foreach (var r in rows)
+        {
+            table.Rows.Add(
+                r.VillageId,
+                r.OwnerPlayerId,
+                r.OwnerTribeId,
+                r.FieldTopologyId,
+                r.IsCapital,
+                r.IsArchon,
+                r.Population,
+                r.CulturePointsPerDay,
+                r.Wood,
+                r.Clay,
+                r.Iron,
+                r.Crop,
+                r.WarehouseCap,
+                r.GranaryCap,
+                r.Loyalty,
+                r.LastUpdatedMs,
+                (int)r.ActiveCelebrationType,
+                r.CelebrationEndsAtMs,
+                r.FestivalEndsAtMs,
+                r.TotalTrapsCount,
+                r.OccupiedTrapsCount);
+        }
+
+        return table;
+    }
+
+    public static DataTable CreateVillageTroopStackTvp(IEnumerable<VillageTroopStack> rows)
+    {
+        var table = new DataTable();
+        table.Columns.Add("StackId", typeof(long));
+        table.Columns.Add("LocationTileId", typeof(int));
+        table.Columns.Add("FeedingVillageId", typeof(int));
+        table.Columns.Add("OwnerVillageId", typeof(int));
+        table.Columns.Add("StackType", typeof(int));
+        table.Columns.Add("HasHero", typeof(bool));
+
+        foreach (var r in rows)
+        {
+            table.Rows.Add(
+                r.StackId,
+                r.LocationTileId,
+                r.FeedingVillageId,
+                r.OwnerVillageId,
+                (int)r.StackType,
+                r.HasHero);
+        }
+
+        return table;
+    }
+
+    public static Village ExtractVillageEconomyRow(VillageState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+
+        return new Village
+        {
+            VillageId = state.VillageId,
+            TileId = state.TileId,
+            OwnerPlayerId = state.OwnerPlayerId,
+            OwnerTribeId = state.TribeId,
+            Name = state.Name,
+            FieldTopologyId = state.FieldTopologyId,
+            IsCapital = state.IsCapital,
+            IsArchon = state.IsArchonVillage,
+            IsWwBuildingPlanVillage = state.IsWwBuildingPlanVillage,
+            Population = state.Population,
+            CulturePointsPerDay = state.IsArchonVillage ? 0 : state.CulturePointsPerDay,
+            Wood = state.ExactWood,
+            Clay = state.ExactClay,
+            Iron = state.ExactIron,
+            Crop = state.ExactCrop,
+            WarehouseCap = state.WarehouseCapacity,
+            GranaryCap = state.GranaryCapacity,
+            LastUpdatedMs = state.LastResourceUpdateAtMs,
+            Loyalty = state.Loyalty,
+            ActiveCelebrationType = state.ActiveCelebrationType,
+            CelebrationEndsAtMs = state.CelebrationEndsAtMs,
+            FestivalEndsAtMs = state.FestivalEndsAtMs,
+            ExpansionSlot1VillageId = state.ExpansionSlot1VillageId,
+            ExpansionSlot2VillageId = state.ExpansionSlot2VillageId,
+            ExpansionSlot3VillageId = state.ExpansionSlot3VillageId,
+            TotalTrapsCount = state.TotalTrapsCount,
+            OccupiedTrapsCount = state.OccupiedTrapsCount
+        };
+    }
+
+    public static void ApplyHydratedEconomyRow(VillageState state, Village row)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(row);
+
+        state.TileId = row.TileId;
+        state.OwnerPlayerId = row.OwnerPlayerId;
+        state.TribeId = row.OwnerTribeId;
+        state.Name = row.Name;
+        state.FieldTopologyId = row.FieldTopologyId;
+        state.IsCapital = row.IsCapital;
+        state.IsArchonVillage = row.IsArchon;
+        state.IsWwBuildingPlanVillage = row.IsWwBuildingPlanVillage;
+        state.Population = row.Population;
+        state.CulturePointsPerDay = row.IsArchon ? 0 : row.CulturePointsPerDay;
+        state.ExactWood = row.Wood;
+        state.ExactClay = row.Clay;
+        state.ExactIron = row.Iron;
+        state.ExactCrop = row.Crop;
+        state.SyncIntegerResourcesFromExact();
+        state.WarehouseCapacity = row.WarehouseCap;
+        state.GranaryCapacity = row.GranaryCap;
+        state.LastResourceUpdateAtMs = row.LastUpdatedMs;
+        state.Loyalty = row.Loyalty;
+        state.ActiveCelebrationType = row.ActiveCelebrationType;
+        state.CelebrationEndsAtMs = row.CelebrationEndsAtMs;
+        state.FestivalEndsAtMs = row.FestivalEndsAtMs;
+        state.ExpansionSlot1VillageId = row.ExpansionSlot1VillageId;
+        state.ExpansionSlot2VillageId = row.ExpansionSlot2VillageId;
+        state.ExpansionSlot3VillageId = row.ExpansionSlot3VillageId;
+        state.TotalTrapsCount = row.TotalTrapsCount;
+        state.OccupiedTrapsCount = row.OccupiedTrapsCount;
     }
 
     public static (IReadOnlyList<VillageBuilding> Buildings, IReadOnlyList<VillageQueueItem> QueueItems)
@@ -261,5 +411,31 @@ public sealed class DapperVillageRepository
                 parameters,
                 commandType: CommandType.StoredProcedure,
                 cancellationToken: cancellationToken));
+    }
+
+    public async Task<IReadOnlyList<MapTile>> QueryCropFinderTilesAsync(
+        byte? fieldTopologyId = null,
+        int minOasisCropBonus = 0,
+        CancellationToken cancellationToken = default)
+    {
+        await using var conn = new SqlConnection(_connectionString);
+        await conn.OpenAsync(cancellationToken);
+
+        const string sql = """
+            SELECT TileId, X, Y, FieldTopologyId, OasisTypeId, BestOasisCropBonus, OccupiedByVillageId
+            FROM dbo.MapTiles
+            WHERE (@FieldTopologyId IS NULL OR FieldTopologyId = @FieldTopologyId)
+              AND (FieldTopologyId IN (1, 6))
+              AND BestOasisCropBonus >= @MinOasisCropBonus
+            ORDER BY BestOasisCropBonus DESC, TileId ASC;
+            """;
+
+        var rows = await conn.QueryAsync<MapTile>(
+            new CommandDefinition(
+                sql,
+                new { FieldTopologyId = fieldTopologyId, MinOasisCropBonus = minOasisCropBonus },
+                cancellationToken: cancellationToken));
+
+        return rows.ToList();
     }
 }
