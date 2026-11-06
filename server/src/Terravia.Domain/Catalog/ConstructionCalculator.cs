@@ -25,7 +25,7 @@ public sealed class ConstructionCalculator : IConstructionCalculator
         var levelStats = _catalog.GetBuildingLevelStats(buildingTypeId, targetLevel);
         double baseTime = levelStats.BaseTimeSeconds;
 
-        // TravianZ Building.php / Templates:
+        // Canonical Main Building duration scaling:
         // If building Main Building (gid == 15):
         //   When current Main Building level == 0: round(baseTime / Speed * 5)
         //   When current Main Building level > 0:  round(baseTime * (bid15[mbLevel].attri / 100) / Speed)

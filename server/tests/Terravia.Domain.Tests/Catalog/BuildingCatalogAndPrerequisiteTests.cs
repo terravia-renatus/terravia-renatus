@@ -242,7 +242,7 @@ public sealed class BuildingCatalogAndPrerequisiteTests
     }
 
     [Fact]
-    public void CapitalVsNonCapitalRestrictions_AndUnitResearchPrerequisites_ShouldMatchTravianZ()
+    public void CapitalVsNonCapitalRestrictions_AndUnitResearchPrerequisites_ShouldMatchCanonicalRules()
     {
         // Great Barracks (29) and Great Stable (30) prohibited in Capital
         var capWithBarracks20 = CreateContext(tribeId: 1, isCapital: true, existingBuildings: [(19, 19, 20)]);

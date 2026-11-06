@@ -42,7 +42,7 @@ public sealed class BuildingRuleCatalog : IBuildingRuleCatalog
         if (building.CapitalConstraint == CapitalConstraint.NonCapitalOnly && context.IsCapital)
             return false;
 
-        // 3. Special-case context rules matching TravianZ Building::meetRequirement(gid)
+        // 3. Special-case context rules for mutual exclusions, account uniqueness, and artifacts
         switch (buildingTypeId)
         {
             case 25: // Residence: not Huns (checked above), MB >= 5, no Residence (25), no Palace (26), no Command Center (44)
@@ -207,7 +207,7 @@ public sealed class BuildingRuleCatalog : IBuildingRuleCatalog
             return new BuildSlotEvaluation(BuildEligibilityStatus.CropStarvationBlock, targetLevel, levelStats.Cost, buildTimeSeconds);
         }
 
-        // 6. Storage capacity checks (Warehouse before Granary, matching TravianZ checkResource codes 1 and 2)
+        // 6. Storage capacity checks (Warehouse evaluated before Granary)
         if (levelStats.Cost.Wood > context.WarehouseCapacity ||
             levelStats.Cost.Clay > context.WarehouseCapacity ||
             levelStats.Cost.Iron > context.WarehouseCapacity)
