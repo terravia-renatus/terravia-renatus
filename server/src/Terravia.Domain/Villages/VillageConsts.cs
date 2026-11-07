@@ -38,4 +38,15 @@ public static class VillageConsts
 
     public const int InstantDemolitionGoldCost = 10;
     public const int MinMainBuildingLevelForDemolition = 10;
+
+    public const int GreatMilitaryCostMultiplier = 3;
+    public const int ResearchFinishAllGoldCost = 2;
+    public const int PlusSmithyLoopBaseDelaySeconds = 60;
+    public const double HospitalSaveRate = 0.40;
+    public const double BigHospitalSaveRate = 0.50;
+    public const int HospitalCapacityPerLevel = 30;
+    public const int BigHospitalCapacityPerLevel = 60;
+    public const int MaxTrapperLevelCapacity = 400;
+    public const double SmallBandageSaveRate = 0.25;
+    public const double LargeBandageSaveRate = 0.33;
 }

@@ -216,10 +216,14 @@ public sealed class SiegeAndConquestCalculator
         conqueredVillage.AnnexedOasisIronUnits = 0;
         conqueredVillage.AnnexedOasisCropUnits = 0;
 
-        // 5. Cancel all active village queues & clear own troop/trapped/research state
+        // 5. Cancel all active village queues & clear own troop/trapped/research/hospital state
         conqueredVillage.ConstructionQueue.Clear();
         conqueredVillage.ActiveDemolition = null;
         conqueredVillage.HasActiveAcademyOrSmithyResearch = false;
+        conqueredVillage.TrainingQueues.Clear();
+        conqueredVillage.ResearchQueue.Clear();
+        Array.Clear(conqueredVillage.WoundedUnitsBySlot, 0, conqueredVillage.WoundedUnitsBySlot.Length);
+        conqueredVillage.HeldPrisoners.Clear();
         conqueredVillage.ActiveCelebrationType = CelebrationType.None;
         conqueredVillage.CelebrationEndsAtMs = 0;
         conqueredVillage.FestivalEndsAtMs = 0;

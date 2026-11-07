@@ -28,6 +28,21 @@ public static class TerraviaDomainErrorCodes
         public const string TargetTileAlreadyOccupied = "Terravia:Villages:TargetTileAlreadyOccupied";
         public const string CannotConquerCapitalOrLastVillage = "Terravia:Villages:CannotConquerCapitalOrLastVillage";
         public const string TargetExpansionBuildingStillStanding = "Terravia:Villages:TargetExpansionBuildingStillStanding";
+
+        public const string InvalidUnitForFacility = "Terravia:Villages:InvalidUnitForFacility";
+        public const string UnitNotResearched = "Terravia:Villages:UnitNotResearched";
+        public const string TrainingFacilityNotBuilt = "Terravia:Villages:TrainingFacilityNotBuilt";
+        public const string GreatMilitaryForbiddenInCapital = "Terravia:Villages:GreatMilitaryForbiddenInCapital";
+        public const string SimultaneousChiefAndSettlerForbidden = "Terravia:Villages:SimultaneousChiefAndSettlerForbidden";
+        public const string NegativeCropTrainingRestricted = "Terravia:Villages:NegativeCropTrainingRestricted";
+        public const string AcademyResearchAlreadyActive = "Terravia:Villages:AcademyResearchAlreadyActive";
+        public const string UnitAlreadyResearched = "Terravia:Villages:UnitAlreadyResearched";
+        public const string ResearchPrerequisitesNotMet = "Terravia:Villages:ResearchPrerequisitesNotMet";
+        public const string SmithyQueueFull = "Terravia:Villages:SmithyQueueFull";
+        public const string SmithyLevelCapReached = "Terravia:Villages:SmithyLevelCapReached";
+        public const string InsufficientWoundedUnits = "Terravia:Villages:InsufficientWoundedUnits";
+        public const string TrapperCapacityExceeded = "Terravia:Villages:TrapperCapacityExceeded";
+        public const string PrisonerStackNotFound = "Terravia:Villages:PrisonerStackNotFound";
     }
 
     public static class Oases

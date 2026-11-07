@@ -149,6 +149,186 @@ public sealed class DapperVillageRepository
         return table;
     }
 
+    public static DataTable CreateTrainingQueueItemsTvp(IEnumerable<VillageTrainingQueueItem> rows)
+    {
+        var table = new DataTable();
+        table.Columns.Add("QueueItemId", typeof(long));
+        table.Columns.Add("VillageId", typeof(int));
+        table.Columns.Add("FacilityCategory", typeof(byte));
+        table.Columns.Add("UnitTypeId", typeof(int));
+        table.Columns.Add("AmountRemaining", typeof(int));
+        table.Columns.Add("PopUpkeepPerUnit", typeof(int));
+        table.Columns.Add("EachTimeSeconds", typeof(int));
+        table.Columns.Add("CommenceAtMs", typeof(long));
+        table.Columns.Add("FinishesAtMs", typeof(long));
+
+        foreach (var r in rows)
+        {
+            table.Rows.Add(
+                r.QueueItemId,
+                r.VillageId,
+                (byte)r.FacilityCategory,
+                r.UnitTypeId,
+                r.AmountRemaining,
+                r.PopUpkeepPerUnit,
+                r.EachTimeSeconds,
+                r.CommenceAtMs,
+                r.FinishesAtMs);
+        }
+
+        return table;
+    }
+
+    public static DataTable CreateResearchQueueItemsTvp(IEnumerable<VillageResearchQueueItem> rows)
+    {
+        var table = new DataTable();
+        table.Columns.Add("QueueItemId", typeof(long));
+        table.Columns.Add("VillageId", typeof(int));
+        table.Columns.Add("Category", typeof(byte));
+        table.Columns.Add("UnitTypeId", typeof(int));
+        table.Columns.Add("TribeUnitSlot", typeof(byte));
+        table.Columns.Add("TargetLevel", typeof(byte));
+        table.Columns.Add("IsPlusWaitingLoop", typeof(bool));
+        table.Columns.Add("StartedAtMs", typeof(long));
+        table.Columns.Add("FinishesAtMs", typeof(long));
+
+        foreach (var r in rows)
+        {
+            table.Rows.Add(
+                r.QueueItemId,
+                r.VillageId,
+                (byte)r.Category,
+                r.UnitTypeId,
+                (byte)r.TribeUnitSlot,
+                (byte)r.TargetLevel,
+                r.IsPlusWaitingLoop,
+                r.StartedAtMs,
+                r.FinishesAtMs);
+        }
+
+        return table;
+    }
+
+    public static (
+        VillageTechnology Technology,
+        IReadOnlyList<VillageTrainingQueueItem> TrainingQueues,
+        IReadOnlyList<VillageResearchQueueItem> ResearchQueues)
+        ExtractMilitaryPersistenceBatch(VillageState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+
+        int unlockedMask = 0;
+        for (int slot = 1; slot <= 10; slot++)
+        {
+            if (state.UnlockedUnitSlots[slot])
+            {
+                unlockedMask |= 1 << slot;
+            }
+        }
+
+        var tech = new VillageTechnology
+        {
+            VillageId = state.VillageId,
+            UnlockedSlotsMask = unlockedMask,
+            OffenseUpgradeLevels = (int[])state.OffenseUpgradeLevels.Clone(),
+            DefenseUpgradeLevels = (int[])state.DefenseUpgradeLevels.Clone(),
+            WoundedUnitsBySlot = (int[])state.WoundedUnitsBySlot.Clone()
+        };
+
+        var trainingRows = state.TrainingQueues
+            .Select(q => new VillageTrainingQueueItem
+            {
+                QueueItemId = q.QueueItemId,
+                VillageId = q.VillageId,
+                FacilityCategory = q.FacilityCategory,
+                UnitTypeId = q.UnitTypeId,
+                AmountRemaining = q.AmountRemaining,
+                PopUpkeepPerUnit = q.PopUpkeepPerUnit,
+                EachTimeSeconds = q.EachTimeSeconds,
+                CommenceAtMs = q.CommenceAtMs,
+                FinishesAtMs = q.FinishesAtMs
+            })
+            .ToList();
+
+        var researchRows = state.ResearchQueue
+            .Select(q => new VillageResearchQueueItem
+            {
+                QueueItemId = q.QueueItemId,
+                VillageId = q.VillageId,
+                Category = q.Category,
+                UnitTypeId = q.UnitTypeId,
+                TribeUnitSlot = q.TribeUnitSlot,
+                TargetLevel = q.TargetLevel,
+                IsPlusWaitingLoop = q.IsPlusWaitingLoop,
+                StartedAtMs = q.StartedAtMs,
+                FinishesAtMs = q.FinishesAtMs
+            })
+            .ToList();
+
+        return (tech, trainingRows, researchRows);
+    }
+
+    public static void ApplyHydratedMilitaryRows(
+        VillageState state,
+        VillageTechnology? technology,
+        IEnumerable<VillageTrainingQueueItem> trainingRows,
+        IEnumerable<VillageResearchQueueItem> researchRows)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(trainingRows);
+        ArgumentNullException.ThrowIfNull(researchRows);
+
+        if (technology is not null && technology.VillageId == state.VillageId)
+        {
+            for (int slot = 1; slot <= 10; slot++)
+            {
+                state.UnlockedUnitSlots[slot] = (technology.UnlockedSlotsMask & (1 << slot)) != 0;
+            }
+            state.UnlockedUnitSlots[1] = true;
+            state.UnlockedUnitSlots[10] = true;
+
+            Array.Copy(technology.OffenseUpgradeLevels, state.OffenseUpgradeLevels, Math.Min(technology.OffenseUpgradeLevels.Length, state.OffenseUpgradeLevels.Length));
+            Array.Copy(technology.DefenseUpgradeLevels, state.DefenseUpgradeLevels, Math.Min(technology.DefenseUpgradeLevels.Length, state.DefenseUpgradeLevels.Length));
+            Array.Copy(technology.WoundedUnitsBySlot, state.WoundedUnitsBySlot, Math.Min(technology.WoundedUnitsBySlot.Length, state.WoundedUnitsBySlot.Length));
+        }
+
+        state.TrainingQueues.Clear();
+        foreach (var q in trainingRows.Where(r => r.VillageId == state.VillageId).OrderBy(r => r.QueueItemId))
+        {
+            state.TrainingQueues.Add(new TrainingQueueItem
+            {
+                QueueItemId = q.QueueItemId,
+                VillageId = q.VillageId,
+                FacilityCategory = q.FacilityCategory,
+                UnitTypeId = q.UnitTypeId,
+                AmountRemaining = q.AmountRemaining,
+                PopUpkeepPerUnit = q.PopUpkeepPerUnit,
+                EachTimeSeconds = q.EachTimeSeconds,
+                CommenceAtMs = q.CommenceAtMs,
+                FinishesAtMs = q.FinishesAtMs
+            });
+        }
+
+        state.ResearchQueue.Clear();
+        foreach (var q in researchRows.Where(r => r.VillageId == state.VillageId).OrderBy(r => r.QueueItemId))
+        {
+            state.ResearchQueue.Add(new ResearchQueueItem
+            {
+                QueueItemId = q.QueueItemId,
+                VillageId = q.VillageId,
+                Category = q.Category,
+                UnitTypeId = q.UnitTypeId,
+                TribeUnitSlot = q.TribeUnitSlot,
+                TargetLevel = q.TargetLevel,
+                IsPlusWaitingLoop = q.IsPlusWaitingLoop,
+                StartedAtMs = q.StartedAtMs,
+                FinishesAtMs = q.FinishesAtMs
+            });
+        }
+
+        state.HasActiveAcademyOrSmithyResearch = state.ResearchQueue.Count > 0;
+    }
+
     public static Village ExtractVillageEconomyRow(VillageState state)
     {
         ArgumentNullException.ThrowIfNull(state);

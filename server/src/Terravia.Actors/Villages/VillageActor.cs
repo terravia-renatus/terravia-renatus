@@ -20,6 +20,8 @@ public sealed class VillageActor : ReceiveActor, IWithTimers
     private const string DemolitionTimerKey = "village-demolition-timer";
     private const string StarvationTimerKey = "village-starvation-timer";
     private const string CelebrationTimerKey = "village-celebration-timer";
+    private const string MilitaryTrainingTimerKey = "village-military-training-timer";
+    private const string ResearchTimerKey = "village-research-timer";
 
     public sealed record UpsertVillageTroopStackCommand(
         StarvationCandidateStack Stack,
@@ -46,6 +48,10 @@ public sealed class VillageActor : ReceiveActor, IWithTimers
     private readonly CelebrationManager _celebrationManager;
     private readonly VillageExpansionManager _expansionManager;
     private readonly SiegeAndConquestCalculator _conquestCalculator;
+    private readonly MilitaryTrainingManager _trainingManager;
+    private readonly TechnologyResearchManager _researchManager;
+    private readonly HospitalHealingManager _hospitalManager;
+    private readonly TrapperManager _trapperManager;
     private readonly IActorRef? _persistenceObserver;
     private readonly IActorRef? _signalRBridgeObserver;
     private readonly IActorRef? _playerActorRef;
@@ -79,6 +85,11 @@ public sealed class VillageActor : ReceiveActor, IWithTimers
         _celebrationManager = celebrationManager ?? new CelebrationManager();
         _expansionManager = expansionManager ?? new VillageExpansionManager(gameCatalog: _catalog);
         _conquestCalculator = conquestCalculator ?? new SiegeAndConquestCalculator(_catalog, _expansionManager);
+        var timeCalc = new TrainingTimeCalculator(_catalog);
+        _trainingManager = new MilitaryTrainingManager(_catalog, timeCalc);
+        _researchManager = new TechnologyResearchManager(_catalog, timeCalc);
+        _hospitalManager = new HospitalHealingManager(_catalog, timeCalc, _trainingManager);
+        _trapperManager = new TrapperManager(_catalog, timeCalc, _trainingManager);
         _persistenceObserver = persistenceObserver;
         _signalRBridgeObserver = signalRBridgeObserver;
         _playerActorRef = playerActorRef;
@@ -306,6 +317,122 @@ public sealed class VillageActor : ReceiveActor, IWithTimers
             AdvanceTimersUpTo(cmd.NowMs);
             var resolution = HandleVillageConquest(cmd.Context, cmd.AttackerOriginVillageId, cmd.NowMs, cmd.RandomProvider, cmd.AnnexedOasisActors);
             Sender.Tell(resolution);
+        });
+
+        Receive<VillageActorCommandEnvelope<EnqueueMilitaryTrainingCommand>>(env =>
+        {
+            AdvanceTimersUpTo(env.NowMs);
+            var result = _trainingManager.EnqueueTrainingBatch(_state, env.Command, env.NowMs, env.SitterPermissions);
+            if (result.Succeeded)
+            {
+                ScheduleNextTimers(env.NowMs);
+                NotifyPersistenceFlush(isImmediateGoldFlush: false, env.NowMs);
+                NotifyMilitarySnapshot(env.NowMs);
+            }
+            Sender.Tell(result);
+        });
+
+        Receive<VillageActorCommandEnvelope<EnqueueHospitalHealingCommand>>(env =>
+        {
+            AdvanceTimersUpTo(env.NowMs);
+            var result = _hospitalManager.EnqueueHealingBatch(_state, env.Command, env.NowMs, env.SitterPermissions);
+            if (result.Succeeded)
+            {
+                ScheduleNextTimers(env.NowMs);
+                NotifyPersistenceFlush(isImmediateGoldFlush: false, env.NowMs);
+                NotifyMilitarySnapshot(env.NowMs);
+            }
+            Sender.Tell(result);
+        });
+
+        Receive<AdmitVillageBattleCasualtiesCommand>(cmd =>
+        {
+            AdvanceTimersUpTo(cmd.NowMs);
+            var result = _hospitalManager.AdmitBattleCasualties(_state, cmd.Context);
+            if (result.TotalAdmittedToHospital > 0)
+            {
+                NotifyPersistenceFlush(isImmediateGoldFlush: false, cmd.NowMs);
+                NotifyMilitarySnapshot(cmd.NowMs);
+            }
+            Sender.Tell(result);
+        });
+
+        Receive<VillageActorCommandEnvelope<StartAcademyResearchCommand>>(env =>
+        {
+            AdvanceTimersUpTo(env.NowMs);
+            var result = _researchManager.StartAcademyResearch(_state, env.Command, env.NowMs, env.SitterPermissions);
+            if (result.Succeeded)
+            {
+                ScheduleNextTimers(env.NowMs);
+                NotifyPersistenceFlush(isImmediateGoldFlush: false, env.NowMs);
+                NotifyMilitarySnapshot(env.NowMs);
+            }
+            Sender.Tell(result);
+        });
+
+        Receive<VillageActorCommandEnvelope<StartSmithyUpgradeCommand>>(env =>
+        {
+            AdvanceTimersUpTo(env.NowMs);
+            var result = _researchManager.StartSmithyUpgrade(_state, env.Command, env.NowMs, env.SitterPermissions);
+            if (result.Succeeded)
+            {
+                ScheduleNextTimers(env.NowMs);
+                NotifyPersistenceFlush(isImmediateGoldFlush: false, env.NowMs);
+                NotifyMilitarySnapshot(env.NowMs);
+            }
+            Sender.Tell(result);
+        });
+
+        Receive<VillageActorCommandEnvelope<FinishAllResearchWithGoldCommand>>(env =>
+        {
+            AdvanceTimersUpTo(env.NowMs);
+            var (result, goldDeducted, _) = _researchManager.FinishAllResearchWithGold(_state, env.Command, env.NowMs, env.SitterPermissions);
+            if (result.Succeeded)
+            {
+                ScheduleNextTimers(env.NowMs);
+                NotifyPersistenceFlush(isImmediateGoldFlush: goldDeducted > 0, env.NowMs);
+                NotifyMilitarySnapshot(env.NowMs);
+            }
+            Sender.Tell(result);
+        });
+
+        Receive<VillageActorCommandEnvelope<ReleasePrisonersCommand>>(env =>
+        {
+            AdvanceTimersUpTo(env.NowMs);
+            var (result, outcome, freeRepairs) = _trapperManager.ReleasePrisonersByTrapOwner(_state, env.Command, env.NowMs, env.SitterPermissions);
+            if (result.Succeeded && outcome.HasValue)
+            {
+                ScheduleNextTimers(env.NowMs);
+                var eto = new PrisonersReleasedOrLiberatedEto(_state.VillageId, [outcome.Value], freeRepairs, env.NowMs);
+                _persistenceObserver?.Tell(eto);
+                _signalRBridgeObserver?.Tell(eto);
+                NotifyPersistenceFlush(isImmediateGoldFlush: false, env.NowMs);
+                NotifyMilitarySnapshot(env.NowMs);
+            }
+            Sender.Tell(result);
+        });
+
+        Receive<VillageActorCommandEnvelope<DissolvePrisonersCommand>>(env =>
+        {
+            AdvanceTimersUpTo(env.NowMs);
+            var (result, freedTraps, freeRepairs) = _trapperManager.DissolvePrisonersByTroopOwner(_state, env.Command, env.NowMs, env.SitterPermissions);
+            if (result.Succeeded)
+            {
+                ScheduleNextTimers(env.NowMs);
+                var dissolvedOutcome = new PrisonerLiberationOutcome(
+                    PrisonerStackId: env.Command.PrisonerStackId,
+                    OwnerVillageId: 0,
+                    SurvivingUnitsBySlot: new int[11],
+                    HeroSurvived: false,
+                    MergedIntoAttackingArmyReturn: false,
+                    FreedTrapCount: freedTraps);
+                var eto = new PrisonersReleasedOrLiberatedEto(_state.VillageId, [dissolvedOutcome], freeRepairs, env.NowMs);
+                _persistenceObserver?.Tell(eto);
+                _signalRBridgeObserver?.Tell(eto);
+                NotifyPersistenceFlush(isImmediateGoldFlush: false, env.NowMs);
+                NotifyMilitarySnapshot(env.NowMs);
+            }
+            Sender.Tell(result);
         });
 
         Receive<ProcessDueVillageTimersCommand>(tick =>
@@ -570,11 +697,18 @@ public sealed class VillageActor : ReceiveActor, IWithTimers
         int priorQueueCount = _state.ConstructionQueue.Count;
         bool usedGold = _constructionManager.CompleteDueConstructionsAndPromote(_state, nowMs);
         bool demoCompleted = _constructionManager.CompleteDueDemolition(_state, nowMs);
-        if (usedGold || demoCompleted || _state.ConstructionQueue.Count != priorQueueCount)
+        int graduatedUnits = _trainingManager.CompleteDueTrainingGraduations(_state, nowMs);
+        int completedResearch = _researchManager.CompleteDueResearchItems(_state, nowMs);
+
+        if (usedGold || demoCompleted || _state.ConstructionQueue.Count != priorQueueCount || graduatedUnits > 0 || completedResearch > 0)
         {
             _state.SyncExactResourcesFromInteger();
             RecalculateEconomyRates();
             NotifyPersistenceFlush(isImmediateGoldFlush: usedGold, nowMs);
+            if (graduatedUnits > 0 || completedResearch > 0)
+            {
+                NotifyMilitarySnapshot(nowMs);
+            }
         }
 
         if (_state.NetCropProductionPerHour < 0 && !_state.IsPeaceMode && _state.Crop <= 0)
@@ -742,6 +876,79 @@ public sealed class VillageActor : ReceiveActor, IWithTimers
         {
             Timers.Cancel(StarvationTimerKey);
         }
+
+        if (_state.TrainingQueues.Count > 0)
+        {
+            long nextGraduationMs = _state.TrainingQueues.Min(q => q.NextUnitGraduatesAtMs);
+            long delayMs = Math.Max(1L, nextGraduationMs - nowMs);
+            Timers.StartSingleTimer(
+                MilitaryTrainingTimerKey,
+                new ProcessDueVillageTimersCommand(nextGraduationMs),
+                TimeSpan.FromMilliseconds(delayMs));
+        }
+        else
+        {
+            Timers.Cancel(MilitaryTrainingTimerKey);
+        }
+
+        if (_state.ResearchQueue.Count > 0)
+        {
+            long nextResearchFinishMs = _state.ResearchQueue.Min(q => q.FinishesAtMs);
+            long delayMs = Math.Max(1L, nextResearchFinishMs - nowMs);
+            Timers.StartSingleTimer(
+                ResearchTimerKey,
+                new ProcessDueVillageTimersCommand(nextResearchFinishMs),
+                TimeSpan.FromMilliseconds(delayMs));
+        }
+        else
+        {
+            Timers.Cancel(ResearchTimerKey);
+        }
+    }
+
+    private void NotifyMilitarySnapshot(long timestampMs)
+    {
+        if (_signalRBridgeObserver is null)
+            return;
+
+        var trainingDtos = _state.TrainingQueues
+            .Select(q => new TrainingQueueItemDto(
+                q.QueueItemId,
+                q.FacilityCategory,
+                q.UnitTypeId,
+                q.AmountRemaining,
+                q.EachTimeSeconds,
+                q.CommenceAtMs,
+                q.FinishesAtMs,
+                q.NextUnitGraduatesAtMs))
+            .ToList();
+
+        var researchDtos = _state.ResearchQueue
+            .Select(q => new ResearchQueueItemDto(
+                q.QueueItemId,
+                q.Category,
+                q.UnitTypeId,
+                q.TribeUnitSlot,
+                q.TargetLevel,
+                q.IsPlusWaitingLoop,
+                q.StartedAtMs,
+                q.FinishesAtMs))
+            .ToList();
+
+        var snapshot = new VillageMilitarySnapshotDto(
+            VillageId: _state.VillageId,
+            UnlockedUnitSlots: _state.UnlockedUnitSlots.ToArray(),
+            OffenseUpgradeLevels: _state.OffenseUpgradeLevels.ToArray(),
+            DefenseUpgradeLevels: _state.DefenseUpgradeLevels.ToArray(),
+            WoundedUnitsBySlot: _state.WoundedUnitsBySlot.ToArray(),
+            MaxHospitalCapacity: _hospitalManager.GetMaxHospitalCapacity(_state),
+            TotalTrapsCount: _state.TotalTrapsCount,
+            OccupiedTrapsCount: _state.OccupiedTrapsCount,
+            MaxTrapCapacity: _trapperManager.CalculateTotalTrapCapacity(_state.SlotBuildingTypes, _state.SlotLevels),
+            TrainingQueues: trainingDtos,
+            ResearchQueue: researchDtos);
+
+        _signalRBridgeObserver.Tell(new VillageMilitaryStateChangedEto(_state.VillageId, timestampMs, snapshot));
     }
 
     private void NotifyEconomySnapshot(long timestampMs)

@@ -13,5 +13,7 @@ public sealed class VillageTroopStack
     public int OwnerVillageId { get; set; }
     public TroopStackType StackType { get; set; }
     public int[] UnitCounts { get; set; } = new int[91];
+    public int[] OffenseUpgradeLevels { get; set; } = new int[9];
+    public int[] DefenseUpgradeLevels { get; set; } = new int[9];
     public bool HasHero { get; set; }
 }

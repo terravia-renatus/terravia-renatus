@@ -23,6 +23,12 @@ builder.Services.AddSingleton<CelebrationManager>();
 builder.Services.AddSingleton<VillageExpansionCatalog>();
 builder.Services.AddSingleton<VillageExpansionManager>();
 builder.Services.AddSingleton<SiegeAndConquestCalculator>();
+builder.Services.AddSingleton<ITrainingTimeCalculator, TrainingTimeCalculator>();
+builder.Services.AddSingleton<ICombatUpgradeCalculator, CombatUpgradeCalculator>();
+builder.Services.AddSingleton<MilitaryTrainingManager>();
+builder.Services.AddSingleton<TechnologyResearchManager>();
+builder.Services.AddSingleton<HospitalHealingManager>();
+builder.Services.AddSingleton<TrapperManager>();
 builder.Services.AddSingleton(sp => new DapperVillageRepository(defaultConnectionString, sp.GetRequiredService<IGameCatalog>()));
 builder.Services.AddSingleton(_ => new DapperOasisRepository(defaultConnectionString));
 builder.Services.AddSingleton(_ => new DapperPlayerRepository(defaultConnectionString));
@@ -31,6 +37,7 @@ var app = builder.Build();
 
 app.MapGameCatalogEndpoints();
 app.MapVillageEconomyEndpoints();
+app.MapVillageMilitaryEndpoints();
 
 app.Run();
 

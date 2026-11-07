@@ -92,6 +92,20 @@ public sealed class VillageState
     public int TotalTrapsCount { get; set; }
     public int OccupiedTrapsCount { get; set; }
 
+    // Military training, accelerators, Academy/Smithy technology, Hospital & Trapper prisoners (003)
+    public double TrainerArtifactMultiplier { get; set; } = 1.0;
+    public HeroRecruitmentHelmetKind StationedHeroHelmet { get; set; } = HeroRecruitmentHelmetKind.None;
+    public int AllianceRecruitmentBonusLevel { get; set; }
+    public long AllianceJoinedAtMs { get; set; }
+    public bool BlockTrainingOnNegativeCrop { get; set; }
+    public bool[] UnlockedUnitSlots { get; } = new bool[11];
+    public int[] OffenseUpgradeLevels { get; } = new int[9];
+    public int[] DefenseUpgradeLevels { get; } = new int[9];
+    public int[] WoundedUnitsBySlot { get; } = new int[9];
+    public List<PrisonerStack> HeldPrisoners { get; } = [];
+    public List<TrainingQueueItem> TrainingQueues { get; } = [];
+    public List<ResearchQueueItem> ResearchQueue { get; } = [];
+
     // Queues & troop stacks
     public List<ConstructionQueueItem> ConstructionQueue { get; } = [];
     public DemolitionQueueItem? ActiveDemolition { get; set; }
@@ -110,6 +124,8 @@ public sealed class VillageState
         OwnerPlayerId = ownerPlayerId;
         TribeId = tribeId;
         IsCapital = isCapital;
+        UnlockedUnitSlots[1] = true;
+        UnlockedUnitSlots[10] = true;
     }
 
     public int GetSlotBuildingType(int slotId) =>

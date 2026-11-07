@@ -10,6 +10,8 @@ public sealed class StarvationCandidateStack
     public int OwnerVillageId { get; init; }
     public int LocationTileId { get; init; }
     public int[] UnitCounts { get; init; } = new int[91];
+    public int[] OffenseUpgradeLevels { get; init; } = new int[9];
+    public int[] DefenseUpgradeLevels { get; init; } = new int[9];
     public bool HasHero { get; set; }
 
     public int TotalRegularUnits
